@@ -1,13 +1,42 @@
 <!doctype html>
-<html lang="en">
-  <head>
+<html lang="ko">
+<head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Vite + React</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-  </body>
+    <title>시삐보털 유니온 차트</title>
+
+    <!-- 폰트 / 색 변수 / 전역 톤은 유지 -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Noto+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet" />
+
+    <style>
+        :root{
+            --bg:#0e1116; --panel:#121723; --text:#e8eef9; --muted:#9aa3b2; --grid:#1f2633;
+            --c-talkative:#DB4437; --c-materialH:#F4B400; --c-rebuild:#0F9D58; --c-victorso:#4285F4; --c-latence:#FF6F00;
+        }
+        *{ box-sizing:border-box; }
+        body{
+            margin:0; padding:32px;
+            background:linear-gradient(180deg,#0b0f14 0%, #0f1520 100%);
+            color:var(--text);
+            font-family:Inter,"Noto Sans KR",system-ui,-apple-system,"Segoe UI",Roboto,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+        }
+        /* 넓은 레이아웃을 위해 최대폭 크게 */
+        .wrap{ max-width: 1680px; margin: 0 auto; }
+        .card{
+            background:var(--panel);
+            border:1px solid #1a2130;
+            border-radius:18px;
+            padding:18px 18px 8px;
+            box-shadow:0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.03);
+        }
+        .recharts-default-tooltip{ border:0!important; background:transparent!important; }
+    </style>
+</head>
+<body>
+<!-- 타이틀/설명/카드는 React에서 렌더링합니다 -->
+<div id="root"></div>
+<script type="module" src="/src/main.tsx"></script>
+</body>
 </html>
