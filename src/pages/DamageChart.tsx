@@ -12,9 +12,8 @@ import {
     YAxis,
     Tooltip,
     Legend,
-    CartesianGrid,
+    CartesianGrid
 } from "recharts";
-
 
 
 const RAW = `
@@ -318,7 +317,7 @@ type Row6 = {
 type Agg = {
     name: string;
     total: number;
-} & Record<string, number>;
+} & Record<`m_${string}`, number>;
 
 type PieRow = {
     name: string;     // 예: "Lv 31"
@@ -326,6 +325,27 @@ type PieRow = {
     level: number;    // 숫자 레벨
     ids: string[];    // 이 레벨에 참여한 고유 ID 목록
 };
+
+type TooltipItem = {
+    value?: number | string;
+    name?: string;
+    dataKey?: string | number;
+    color?: string;
+    payload?: unknown;
+};
+
+type CustomTooltipProps = {
+    active?: boolean;
+    payload?: TooltipItem[];
+    label?: string | number;
+};
+
+type PieTooltipProps = {
+    active?: boolean;
+    // recharts가 보내주는 payload 배열의 각 요소 안에 우리가 넣어둔 PieRow가 들어있음
+    payload?: Array<{ payload?: PieRow }>;
+};
+
 
 const cssRoot = getComputedStyle(document.documentElement);
 
@@ -399,19 +419,25 @@ function pickLatestSeason(rows: Row6[]) {
 /** (name, monster)로 스택 집계 */
 function aggregate(rows: Row6[], monsterOrder: string[]): Agg[] {
     const map = new Map<string, Agg>();
+
     for (const r of rows) {
         if (!map.has(r.name)) {
-            // 동적 키 준비(해당 시즌 5종 기준으로 0으로 초기화)
-            const base: Record<string, number> = {};
-            for (const m of monsterOrder) base[m] = 0;
+            // m_ 접두어를 붙여서 몬스터별 키 초기화
+            const base = Object.fromEntries(
+                monsterOrder.map((m) => [`m_${m}`, 0])
+            ) as Record<`m_${string}`, number>;
+
             map.set(r.name, { name: r.name, total: 0, ...base });
         }
+
         const a = map.get(r.name)!;
         if (monsterOrder.includes(r.monster)) {
-            a[r.monster] += r.damage;
+            const key = `m_${r.monster}` as const;
+            a[key] += r.damage;
             a.total += r.damage;
         }
     }
+
     return Array.from(map.values()).sort((a, b) => b.total - a.total);
 }
 
@@ -422,27 +448,53 @@ const formatKor = (n: number) => {
     return (n || 0).toLocaleString();
 };
 
-function CustomTooltip({
-                           active, payload, label,
-                       }: { active?: boolean; payload?: any[]; label?: string }) {
+// CustomTooltip
+function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
     if (!active || !payload || !payload.length) return null;
-    const rows = payload.filter((p) => p && p.value > 0);
+
+    // p가 null/undefined 아니고 value > 0 일 때만 남김 + 타입 가드로 any 제거
+    const rows = (payload ?? []).filter(
+        (p): p is TooltipItem => p != null && Number(p.value ?? 0) > 0
+    );
     if (!rows.length) return null;
-    const total = rows.reduce((s, r) => s + (r.value || 0), 0);
+
+    // s, r에 암시적 any가 뜨지 않도록 누적값을 number로 고정
+    const total = rows.reduce((sum: number, r) => sum + Number(r.value ?? 0), 0);
+
     return (
         <div
             style={{
-                background: "rgba(18,22,35,.96)", color: "#eaf0ff",
-                padding: "12px 14px", borderRadius: 12,
-                boxShadow: "0 10px 30px rgba(0,0,0,.35)", fontSize: 12, minWidth: 220,
+                background: "rgba(18,22,35,.96)",
+                color: "#eaf0ff",
+                padding: "12px 14px",
+                borderRadius: 12,
+                boxShadow: "0 10px 30px rgba(0,0,0,.35)",
+                fontSize: 12,
+                minWidth: 220,
             }}
         >
-            <div style={{ fontWeight: 700, marginBottom: 8, letterSpacing: 0.2 }}>{label}</div>
+            <div style={{ fontWeight: 700, marginBottom: 8, letterSpacing: 0.2 }}>
+                {label}
+            </div>
             {rows.map((r) => (
-                <div key={r.dataKey} style={{ display: "flex", gap: 10, alignItems: "center", lineHeight: 1.5 }}>
-                    <span style={{ width: 10, height: 10, background: r.color, borderRadius: 3, display: "inline-block", opacity: 0.95 }} />
+                <div
+                    key={String(r.dataKey ?? r.name)}
+                    style={{ display: "flex", gap: 10, alignItems: "center", lineHeight: 1.5 }}
+                >
+          <span
+              style={{
+                  width: 10,
+                  height: 10,
+                  background: r.color as string,
+                  borderRadius: 3,
+                  display: "inline-block",
+                  opacity: 0.95,
+              }}
+          />
                     <span style={{ opacity: 0.9 }}>{r.name}</span>
-                    <span style={{ marginLeft: "auto", fontVariantNumeric: "tabular-nums" }}>{formatKor(r.value)}</span>
+                    <span style={{ marginLeft: "auto", fontVariantNumeric: "tabular-nums" }}>
+            {formatKor(Number(r.value ?? 0))}
+          </span>
                 </div>
             ))}
             <hr style={{ border: 0, borderTop: "1px solid rgba(255,255,255,.10)", margin: "8px 0" }} />
@@ -455,37 +507,44 @@ function CustomTooltip({
 }
 
 
-function PieTooltip({ active, payload }: { active?: boolean; payload?: any[] }) {
+
+function PieTooltip({ active, payload }: PieTooltipProps) {
     if (!active || !payload || !payload.length) return null;
-    const p: PieRow | undefined = payload[0]?.payload;
+
+    const p = (payload[0]?.payload ?? undefined) as PieRow | undefined;
     if (!p) return null;
 
     const ids = p.ids || [];
-    const MAX = 12; // 너무 많으면 잘라서 표기
+    const MAX = 12;
     const shown = ids.slice(0, MAX);
     const remain = Math.max(0, ids.length - shown.length);
 
     return (
         <div
             style={{
-                background: "rgba(18,22,35,.96)", color: "#eaf0ff",
-                padding: "12px 14px", borderRadius: 12,
-                boxShadow: "0 10px 30px rgba(0,0,0,.35)", fontSize: 12,
-                maxWidth: 260
+                background: "rgba(18,22,35,.96)",
+                color: "#eaf0ff",
+                padding: "12px 14px",
+                borderRadius: 12,
+                boxShadow: "0 10px 30px rgba(0,0,0,.35)",
+                fontSize: 12,
+                maxWidth: 260,
             }}
         >
             <div style={{ display: "flex", gap: 8, alignItems: "baseline", marginBottom: 8 }}>
                 <div style={{ fontWeight: 800 }}>{p.name}</div>
-                <div style={{ marginLeft: "auto", opacity: .85 }}> {p.value.toLocaleString()}회</div>
+                <div style={{ marginLeft: "auto", opacity: 0.85 }}>
+                    {p.value.toLocaleString()}회
+                </div>
             </div>
-
             <div style={{ lineHeight: 1.6 }}>
-                {shown.length ? shown.join(", ") : <span style={{ opacity: .6 }}>없음</span>}
-                {remain > 0 && <span style={{ opacity: .6 }}> 외 {remain}명…</span>}
+                {shown.length ? shown.join(", ") : <span style={{ opacity: 0.6 }}>없음</span>}
+                {remain > 0 && <span style={{ opacity: 0.6 }}> 외 {remain}명…</span>}
             </div>
         </div>
     );
 }
+
 
 
 export default function DamageChart() {
@@ -532,7 +591,6 @@ export default function DamageChart() {
         (cssRoot.getPropertyValue("--c-talkative") || "#DB4437").trim(),
     ];
 
-    const CHART_HEIGHT = 500;
 
 
     const pieData: PieRow[] = React.useMemo(() => {
@@ -767,7 +825,7 @@ export default function DamageChart() {
                                 {monsters.map((m, i) => (
                                     <Bar
                                         key={m}
-                                        dataKey={m}
+                                        dataKey={`m_${m}`} // 접두어 버전
                                         stackId="total"
                                         name={m}
                                         fill={COLOR_MAP[m] || BASE_PALETTE[i % BASE_PALETTE.length]}
