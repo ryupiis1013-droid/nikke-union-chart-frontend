@@ -12,7 +12,8 @@ import {
     YAxis,
     Tooltip,
     Legend,
-    CartesianGrid
+    CartesianGrid,
+    ReferenceLine
 } from "recharts";
 
 
@@ -192,6 +193,7 @@ const RAW = `
 0,괴벨스,마더웨일,4764731643,30,82
 0,괴벨스,타이피스,4380478134,30,82
 0,캐르,마더웨일,9537396496,30,82
+0,이브,타이피스,6341283013,30,82
 0,이브,타이피스,6341283013,30,82
 0,캐르,쿠쿰버,14022088711,30,82
 0,이브,리빌드 벌컨R,7706535272,30,82
@@ -447,10 +449,11 @@ function aggregate(rows: Row6[], monsterOrder: string[]): Agg[] {
 
 /** 한국식 단위 */
 const formatKor = (n: number) => {
-    if (n >= 1_0000_0000_0000) return (n / 1_0000_0000_0000).toFixed(2) + "조";
-    if (n >= 1_0000_0000) return (n / 1_0000_0000).toFixed(2) + "억";
+    if (n >= 1_0000_0000_0000) return Math.floor(n / 1_0000_0000_0000) + "조";
+    if (n >= 1_0000_0000) return Math.floor(n / 1_0000_0000) + "억";
     return (n || 0).toLocaleString();
 };
+
 
 /** 시즌별 사용자 총합(Map: name -> total) */
 function totalsBySeason(rows: Row6[], targetSeason: number): Map<string, number> {
@@ -462,8 +465,67 @@ function totalsBySeason(rows: Row6[], targetSeason: number): Map<string, number>
     return m;
 }
 
+/** 시즌별 핵심 메트릭 계산 */
+function seasonMetrics(rows: Row6[], targetSeason: number) {
+    let has = false;
+    let total = 0;
+    const ids = new Set<string>();
+    let rank: number | undefined = undefined;
+
+    for (const r of rows) {
+        if (r.season !== targetSeason) continue;
+        has = true;
+        total += r.damage;
+        ids.add(r.name);
+        if (rank === undefined) rank = r.unionRank;
+    }
+    const headcount = ids.size;
+    const avg = headcount ? total / headcount : 0;
+    return { has, headcount, total, avg, rank };
+}
+
+// 기존 Delta 대체
+function Delta({
+                   delta,
+                   isRank,
+                   useKor,          // 억/조 포맷 여부 (Damage Total/Avg에서 사용)
+                   inline = true,   // 같은 줄(기본) vs 새 줄
+               }: {
+    delta: number | undefined;
+    isRank?: boolean;
+    useKor?: boolean;
+    inline?: boolean;
+}) {
+    if (typeof delta !== "number") return <span style={{ opacity: .6, ...(inline ? { marginLeft: 6 } : {}) }}>-</span>;
+    if (delta === 0) return <span style={{ opacity: .8, ...(inline ? { marginLeft: 6 } : {}) }}>-</span>;
+
+    const up = delta > 0;
+    const color = isRank ? (up ? CHROME.blue : CHROME.red) : (up ? CHROME.red : CHROME.blue);
+
+    const formatted = useKor
+        ? formatKor(Math.abs(delta))
+        : Math.abs(delta).toLocaleString();
+
+    return (
+        <span
+            style={{
+                fontSize: 12,
+                fontWeight: 800,
+                color,
+                letterSpacing: 0.2,
+                ...(inline ? { marginLeft: 6 } : {}), // 새 줄이면 좌측 여백 제거
+            }}
+        >
+      {up ? "▲" : "▼"}{formatted}
+    </span>
+    );
+}
+
+
+
+
 // CustomTooltip
-function CustomTooltip({ active, payload, label, prevTotals, prevSeason }: CustomTooltipProps) {
+function CustomTooltip({ active, payload, label, prevTotals }: CustomTooltipProps) {
     if (!active || !payload || !payload.length) return null;
 
     const rows = (payload ?? []).filter(
@@ -574,6 +636,64 @@ function PieTooltip({ active, payload }: PieTooltipProps) {
     );
 }
 
+// --- KPI Hover Tooltip (custom) ---------------------------------------------
+
+function KpiHover({ tip, children }: { tip: React.ReactNode; children: React.ReactNode }) {
+    const [open, setOpen] = React.useState(false);
+
+    return (
+        <div
+            style={{ position: "relative", cursor: "default" }} //
+            onMouseEnter={() => setOpen(true)}
+            onMouseLeave={() => setOpen(false)}
+        >
+            <div>{children}</div>
+
+            {open && (
+                <div
+                    style={{
+                        position: "absolute",
+                        left: "50%",
+                        bottom: "calc(100% + 10px)",
+                        transform: "translateX(-50%)",
+                        background: "rgba(18,22,35,.96)",
+                        color: "#eaf0ff",
+                        padding: "10px 12px",
+                        borderRadius: 12,
+                        boxShadow: "0 10px 30px rgba(0,0,0,.35)",
+                        fontSize: 12,
+                        // ▼ 가로 크기 자동
+                        width: "100px",
+                        maxWidth: "unset",
+                        whiteSpace: "nowrap",
+                        zIndex: 10,
+                        border: "1px solid rgba(255,255,255,.06)",
+                        pointerEvents: "none",
+                    }}
+                >
+                    {tip}
+                    <div
+                        style={{
+                            position: "absolute",
+                            left: "50%",
+                            top: "100%",
+                            transform: "translateX(-50%)",
+                            width: 0,
+                            height: 0,
+                            borderLeft: "6px solid transparent",
+                            borderRight: "6px solid transparent",
+                            borderTop: "6px solid rgba(18,22,35,.96)",
+                            filter: "drop-shadow(0 1px 0 rgba(255,255,255,.06))",
+                        }}
+                    />
+                </div>
+            )}
+        </div>
+    );
+}
+
+
+
 
 
 export default function DamageChart() {
@@ -605,6 +725,22 @@ export default function DamageChart() {
     const totalDamage = data.reduce((s, a) => s + a.total, 0);
     const avgDamage = totalDamage / Math.max(1, headcount);
     const top5 = data.slice(0, 5);
+// 현재/전시즌 메트릭
+    const prevSeason = season - 1;
+    const currM = React.useMemo(() => seasonMetrics(allRows, season), [allRows, season]);
+    const prevM = React.useMemo(() => seasonMetrics(allRows, prevSeason), [allRows, season]);
+
+// 델타 계산 (전시즌 없으면 undefined 처리)
+    const deltaRank       = prevM.has && currM.rank != null && prevM.rank != null ? (currM.rank - prevM.rank) : undefined;
+//  예시: 전 10위 → 현 12위 => +2(밀림) → ▲2 파랑
+//       전 10위 → 현  8위 => -2(상승) → ▼2 빨강
+
+    const deltaHeadcount  = prevM.has ? (currM.headcount - prevM.headcount) : undefined;
+    const deltaTotal      = prevM.has ? (currM.total - prevM.total) : undefined;
+    const deltaAvg        = prevM.has ? (Math.round(currM.avg) - Math.round(prevM.avg)) : undefined;
+
+
+
 
     const css = getComputedStyle(document.documentElement);
     const axisTick = { fill: css.getPropertyValue("--muted").trim() || "#9aa3b2", fontSize: 12 };
@@ -642,7 +778,7 @@ export default function DamageChart() {
         return Array.from(byLevel.entries())
             .sort((a, b) => a[0] - b[0])
             .map(([level, v]) => ({
-                name: `Lv ${level}`,
+                name: `LEVEL ${level}`,
                 value: v.count,
                 level,
                 ids: Array.from(v.ids).sort(),
@@ -657,12 +793,12 @@ export default function DamageChart() {
 
 
     return (
-        <div style={{ minHeight: "100dvh", background: "var(--panel)", overflowX: "hidden" }}>
-            <div style={{ maxWidth: 1680, margin: "0 auto", padding: "0 24px" }}>
+        <div style={{ minHeight: "100dvh", background: "var(--panel)", overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+            <div style={{ maxWidth: 1680, minWidth: 1200, margin: "0 auto", padding: "0 24px" }}>
                 <h2 style={{ fontSize: 22, fontWeight: 800, letterSpacing: .2, margin: "0 0 8px" }}>
-                    유레 하드 (시즌 {season})
+                    시삐보털 유니온 레이드 (31차)
                 </h2>
-                <div style={{ color: "var(--muted)", fontSize: 15, marginBottom: 16 }}>last update: 2025-08-13</div>
+                <div style={{ color: "var(--muted)", fontSize: 15, marginBottom: 16 }}>last update: 2025-08-14</div>
 
                 {/* KPI + TOP5 */}
                 <div style={{ display: "grid", gridTemplateColumns: "1.7fr 1fr 1fr", gap: 16, marginBottom: 18 }}>
@@ -683,11 +819,106 @@ export default function DamageChart() {
                             }}
                         >
                             {[
-                                { title: "Rank", value: <>{unionRank || "-"} 위</>, color: CHROME.red },
-                                { title: "Headcount", value: <>{headcount.toLocaleString()} 명</>, color: CHROME.yellow },
-                                { title: "Damage Total", value: <>{formatKor(totalDamage)}</>, color: CHROME.blue },
-                                { title: "Damage Avg", value: <>{formatKor(Math.round(avgDamage))}</>, color: CHROME.green },
-                            ].map((k, i) => (
+                                {
+                                    title: "Rank",
+                                    value: (
+                                        <KpiHover
+                                            tip={
+                                                <div style={{ minWidth: 160 }}>
+                                                    <div style={{ opacity: .8 }}>전시즌</div>
+                                                    <div style={{ fontWeight: 800, marginTop: 4 }}>
+                                                        {prevM.has && prevM.rank != null ? `${prevM.rank} 위` : "-"}
+                                                    </div>
+
+                                                </div>
+                                            }
+                                        >
+                                            <div style={{ textAlign: "center", lineHeight: 1.25 }}>
+                                                <div>{(unionRank || "-")} 위</div>
+                                                <div style={{ marginTop: 4 }}>
+                                                    <Delta delta={deltaRank} isRank inline={false} />
+                                                </div>
+                                            </div>
+                                        </KpiHover>
+                                    ),
+                                    color: CHROME.red
+                                },
+                                {
+                                    title: "Headcount",
+                                    value: (
+                                        <KpiHover
+                                            tip={
+                                                <div style={{ minWidth: 160 }}>
+                                                    <div style={{ opacity: .8 }}>전시즌</div>
+                                                    <div style={{ fontWeight: 800, marginTop: 4 }}>
+                                                        {prevM.has ? `${prevM.headcount.toLocaleString()} 명` : "-"}
+                                                    </div>
+
+                                                </div>
+                                            }
+                                        >
+                                            <div style={{ textAlign: "center", lineHeight: 1.25 }}>
+                                                <div>{headcount.toLocaleString()} 명</div>
+                                                <div style={{ marginTop: 4 }}>
+                                                    <Delta delta={deltaHeadcount} inline={false} />
+                                                </div>
+                                            </div>
+                                        </KpiHover>
+                                    ),
+                                    color: CHROME.yellow
+                                },
+                                {
+                                    title: "Total Damage",
+                                    value: (
+                                        <KpiHover
+                                            tip={
+                                                <div style={{ minWidth: 160 }}>
+                                                    <div style={{ opacity: .8 }}>전시즌</div>
+                                                    <div style={{ fontWeight: 800, marginTop: 4 }}>
+                                                        {prevM.has ? formatKor(prevM.total) : "-"}
+                                                    </div>
+
+                                                </div>
+                                            }
+                                        >
+                                            <div style={{ textAlign: "center", lineHeight: 1.25 }}>
+                                                <div>{formatKor(totalDamage)}</div>
+                                                <div style={{ marginTop: 4 }}>
+                                                    <Delta delta={deltaTotal} useKor inline={false} />
+                                                </div>
+                                            </div>
+                                        </KpiHover>
+                                    ),
+                                    color: CHROME.blue
+                                },
+                                {
+                                    title: "Average Damage",
+                                    value: (
+                                        <KpiHover
+                                            tip={
+                                                <div style={{ minWidth: 160 }}>
+                                                    <div style={{ opacity: .8 }}>전시즌</div>
+                                                    <div style={{ fontWeight: 800, marginTop: 4 }}>
+                                                        {prevM.has ? formatKor(Math.round(prevM.avg)) : "-"}
+                                                    </div>
+
+                                                </div>
+                                            }
+                                        >
+                                            <div style={{ textAlign: "center", lineHeight: 1.25 }}>
+                                                <div>{formatKor(Math.round(avgDamage))}</div>
+                                                <div style={{ marginTop: 4 }}>
+                                                    <Delta delta={deltaAvg} useKor inline={false} />
+                                                </div>
+                                            </div>
+                                        </KpiHover>
+                                    ),
+                                    color: CHROME.green
+                                }
+                            ]
+
+
+                                .map((k, i) => (
                                 <div
                                     key={i}
                                     style={{
@@ -701,7 +932,7 @@ export default function DamageChart() {
                                 >
                                     <p style={kpiTitle}>{k.title}</p>
                                     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                                        <p style={{ ...kpiValue, color: k.color, margin: 0 }}>{k.value}</p>
+                                        <div style={{ ...kpiValue, color: "#fff", margin: 0 }}>{k.value}</div>
                                     </div>
                                 </div>
                             ))}
@@ -728,7 +959,7 @@ export default function DamageChart() {
                                 <div>#</div>
                                 <div>ID</div>
                                 <div style={{ textAlign: "right" }}>Total</div>
-                                <div style={{ textAlign: "right" }}>기여도</div>
+                                <div style={{ textAlign: "right" }}>Share</div>
                             </div>
 
                             {top5.map((r, idx) => {
@@ -762,7 +993,7 @@ export default function DamageChart() {
                     {/* Level Attempts Pie */}
                     <div style={{ ...card, padding: 16 }}>
                         <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
-                            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Encounter</h3>
+                            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Encounter Count</h3>
                         </div>
 
                         <div
@@ -819,17 +1050,7 @@ export default function DamageChart() {
                             </ResponsiveContainer>
                         </div>
                     </div>
-
-
-
-
                 </div>
-
-
-
-
-
-
 
 
                 {/* 차트 */}
@@ -843,7 +1064,7 @@ export default function DamageChart() {
                         boxShadow: "0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.03)",
                     }}
                 >
-                    <h3 style={{ margin: "0 0 8px", fontSize: 16, fontWeight: 700 }}>Damage Chart</h3>
+                    <h3 style={{ margin: "0 0 8px", fontSize: 16, fontWeight: 700 }}>Overall Damage</h3>
                     <div style={{ width: "100%", height: 500 }}>
                         <ResponsiveContainer width="100%" height="100%">
                             <BarChart data={data} margin={{ top: 24, right: 32, left: 24, bottom: 40 }}>
@@ -868,6 +1089,13 @@ export default function DamageChart() {
                                         radius={[4, 4, 0, 0]}
                                     />
                                 ))}
+                                <ReferenceLine
+                                    y={Math.round(avgDamage)}               // 이번 시즌 평균(이미 계산된 변수 사용)
+                                    stroke="#eaf0ff"                        // 선 색
+                                    strokeOpacity={0.8}
+                                    strokeDasharray="6 6"                   // 점선
+                                    ifOverflow="extendDomain"
+                                />
                             </BarChart>
                         </ResponsiveContainer>
                     </div>
