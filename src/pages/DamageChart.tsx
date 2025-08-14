@@ -513,7 +513,7 @@ export default function DamageChart() {
                 <h2 style={{ fontSize: 22, fontWeight: 800, letterSpacing: .2, margin: "0 0 8px" }}>
                     시삐보털 유니온 레이드 (31차)
                 </h2>
-                <div style={{ color: "var(--muted)", fontSize: 15, marginBottom: 16 }}>last update: 2025-08-14</div>
+                <div style={{ color: "var(--muted)", fontSize: 15, marginBottom: 16 }}>last update: 2025-08-15</div>
 
                 {/* KPI + TOP5 */}
                 <div style={{ display: "grid", gridTemplateColumns: "1.7fr 1fr 1fr", gap: 16, marginBottom: 18 }}>
