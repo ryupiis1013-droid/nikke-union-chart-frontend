@@ -338,6 +338,10 @@ type CustomTooltipProps = {
     active?: boolean;
     payload?: TooltipItem[];
     label?: string | number;
+    /** 전시즌 사용자 총합 */
+    prevTotals?: Map<string, number>;
+    /** 전시즌 번호(표시용) */
+    prevSeason?: number;
 };
 
 type PieTooltipProps = {
@@ -448,18 +452,29 @@ const formatKor = (n: number) => {
     return (n || 0).toLocaleString();
 };
 
+/** 시즌별 사용자 총합(Map: name -> total) */
+function totalsBySeason(rows: Row6[], targetSeason: number): Map<string, number> {
+    const m = new Map<string, number>();
+    for (const r of rows) {
+        if (r.season !== targetSeason) continue;
+        m.set(r.name, (m.get(r.name) || 0) + r.damage);
+    }
+    return m;
+}
+
 // CustomTooltip
-function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
+function CustomTooltip({ active, payload, label, prevTotals, prevSeason }: CustomTooltipProps) {
     if (!active || !payload || !payload.length) return null;
 
-    // p가 null/undefined 아니고 value > 0 일 때만 남김 + 타입 가드로 any 제거
     const rows = (payload ?? []).filter(
         (p): p is TooltipItem => p != null && Number(p.value ?? 0) > 0
     );
     if (!rows.length) return null;
 
-    // s, r에 암시적 any가 뜨지 않도록 누적값을 number로 고정
     const total = rows.reduce((sum: number, r) => sum + Number(r.value ?? 0), 0);
+
+    const key = String(label ?? "");
+    const prev = prevTotals?.get(key);
 
     return (
         <div
@@ -476,6 +491,7 @@ function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
             <div style={{ fontWeight: 700, marginBottom: 8, letterSpacing: 0.2 }}>
                 {label}
             </div>
+
             {rows.map((r) => (
                 <div
                     key={String(r.dataKey ?? r.name)}
@@ -497,10 +513,23 @@ function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
           </span>
                 </div>
             ))}
+
             <hr style={{ border: 0, borderTop: "1px solid rgba(255,255,255,.10)", margin: "8px 0" }} />
+
+            {/* 합계 (현재 시즌) */}
             <div style={{ display: "flex", gap: 8 }}>
                 <span style={{ opacity: 0.8 }}>합계</span>
                 <span style={{ marginLeft: "auto", fontWeight: 700 }}>{formatKor(total)}</span>
+            </div>
+
+            {/* 전시즌 한 줄 (합계와는 '형제' 줄로 둬야 레이아웃 안꼬임) */}
+            <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+        <span style={{ opacity: 0.8 }}>
+          전시즌{ /*typeof prevSeason === "number" ? `(${prevSeason})` : "" */}
+        </span>
+                <span style={{ marginLeft: "auto", fontWeight: 700 }}>
+          {typeof prev === "number" ? formatKor(prev) : "-"}
+        </span>
             </div>
         </div>
     );
@@ -548,11 +577,18 @@ function PieTooltip({ active, payload }: PieTooltipProps) {
 
 
 export default function DamageChart() {
-    // 1) 파싱(6열) → 2) 최신 시즌 선택 → 3) 해당 시즌 몬스터 5종 순서 추출
+    // 전체 rows 보관
+    const allRows = React.useMemo(() => parse6(RAW), []);
+
+    // 최신 시즌 선택
     const { seasonRows, monsters, season, unionRank } = React.useMemo(() => {
-        const parsed = parse6(RAW);
-        return pickLatestSeason(parsed);
-    }, []);
+        return pickLatestSeason(allRows);
+    }, [allRows]);
+
+    // 전시즌(= 최신시즌 - 1) 사용자별 총합
+    const prevTotals = React.useMemo(() => {
+        return totalsBySeason(allRows, season - 1);
+    }, [allRows, season]);
 
     // 4) 색상 매핑: 최신 시즌 몬스터 5종에 BASE_PALETTE 순서대로 배정
     const COLOR_MAP: Record<string, string> = React.useMemo(() => {
@@ -814,7 +850,7 @@ export default function DamageChart() {
                                 <CartesianGrid stroke={css.getPropertyValue("--grid").trim() || "#1f2633"} vertical={false} />
                                 <XAxis dataKey="name" interval={0} angle={-28} textAnchor="end" height={74} tick={axisTick} />
                                 <YAxis tickFormatter={formatKor} tick={axisTick} />
-                                <Tooltip content={<CustomTooltip />} />
+                                <Tooltip content={<CustomTooltip prevTotals={prevTotals} prevSeason={season - 1} />} />
                                 <Legend
                                     verticalAlign="bottom"
                                     align="center"
