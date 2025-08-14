@@ -3,26 +3,44 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>시삐보털 유니온 차트</title>
+    <title>유니온 레이드 차트</title>
 
-    <!-- 폰트 / 색 변수 / 전역 톤은 유지 -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Noto+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet" />
-
     <style>
         :root{
             --bg:#0e1116; --panel:#121723; --text:#e8eef9; --muted:#9aa3b2; --grid:#1f2633;
             --c-talkative:#DB4437; --c-materialH:#F4B400; --c-rebuild:#0F9D58; --c-victorso:#4285F4; --c-latence:#FF6F00;
         }
         *{ box-sizing:border-box; }
+
+        /* 배경을 panel 색으로 통일 + 가로 오버플로우 방지 */
+        html, body {
+            margin:0; padding:0; height:100%;
+            background: var(--panel);
+            overflow-x: hidden;
+        }
+        /* 스크롤바로 인한 레이아웃 흔들림 방지(지원 브라우저) */
+        html { scrollbar-gutter: stable; }
+
+        /* 페이지(루트)를 수평 중앙에 두고, 상단에서 10px 떨어뜨리기 */
         body{
-            margin:0; padding:32px;
-            background:linear-gradient(180deg,#0b0f14 0%, #0f1520 100%);
             color:var(--text);
             font-family:Inter,"Noto Sans KR",system-ui,-apple-system,"Segoe UI",Roboto,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+            display:flex;
+            justify-content:center;   /* 가운데 정렬 */
+            align-items:flex-start;   /* 상단 정렬 */
+            padding-top:50px;         /* 상단 10px 여백 */
         }
-        /* 넓은 레이아웃을 위해 최대폭 크게 */
+
+        /* React 루트 폭 제한(가운데 정렬 유지) */
+        #root{
+            width:100%;
+            max-width:1680px;         /* 프로젝트 기본 폭에 맞춤 */
+        }
+
+        /* (참고) 카드 공통 */
         .wrap{ max-width: 1680px; margin: 0 auto; }
         .card{
             background:var(--panel);
@@ -33,9 +51,9 @@
         }
         .recharts-default-tooltip{ border:0!important; background:transparent!important; }
     </style>
+
 </head>
 <body>
-<!-- 타이틀/설명/카드는 React에서 렌더링합니다 -->
 <div id="root"></div>
 <script type="module" src="/src/main.tsx"></script>
 </body>
